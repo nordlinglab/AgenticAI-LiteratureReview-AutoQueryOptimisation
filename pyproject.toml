@@ -1,6 +1,6 @@
 [project]
 name = "agentic-ai-lit-review"
-version = "0.1.0"
+version = "0.2.0"
 description = "AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result."
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,8 @@ dependencies = [
     "pyalex>=0.13",      # OpenAlex Wrapper
     "rich>=13.0",        # Pretty terminal output
     "python-dotenv>=1.0"
+		"pybliometrics>=3.5", # Scopus Wrapper
+    "requests>=2.31",     # For Web of Science API
 ]
 
 [tool.setuptools]

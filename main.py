@@ -6,6 +6,8 @@ from src.adapters.databases.openalex_adapter import OpenAlexAdapter
 from src.adapters.llms.gemini_adapter import GeminiAdapter
 from src.core.models import Record
 from dotenv import load_dotenv
+from src.adapters.databases.scopus_adapter import ScopusAdapter
+from src.adapters.databases.wos_adapter import WosAdapter
 
 # Load environment variables
 load_dotenv()
@@ -27,7 +29,16 @@ def human_review(record: Record, llm_reason: str):
 
 def main():
     config = load_config()
-    db = OpenAlexAdapter()
+    # Allow user or config to select database
+    db_choice = config.get('search', {}).get('database', 'openalex').lower()
+    
+    if db_choice == 'scopus':
+        db = ScopusAdapter()
+    elif db_choice == 'wos':
+        db = WosAdapter()
+    else:
+        db = OpenAlexAdapter()
+
     llm = GeminiAdapter(model_name=config['llm']['model'])
     
     current_query = config['search']['initial_query']
