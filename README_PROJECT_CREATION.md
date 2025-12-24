@@ -1774,7 +1774,7 @@ print(f"\nRationale: {suggestion.rationale}")
 
 ---
 
-## Implementation--First version (Gemini 3.0 Pro)
+## Implementation--Version 0.1.0 (Gemini 3.0 Pro)
 
 My credits in Claude ended and it is good practice to have multiple LLMs involved in design, so I switched to Gemini 3.0 Pro
 
@@ -2155,7 +2155,6 @@ python main.py
 ```
 
 
-
 ### How this meets your requirements:
 
 1. **Closed Loop:** The `main.py` script feeds the "Irrelevant" papers back into Gemini to ask *why* they were retrieved and generates a better query.
@@ -2163,6 +2162,218 @@ python main.py
 3. **Human-in-the-Loop:** The script pauses when the LLM is "uncertain" and asks you via the terminal to decide. (Ideally, this moves to the Streamlit UI for larger datasets).
 4. **Reproducibility:** All configuration is in `settings.yaml`, not hardcoded.
 
-The actual first implementation is based on this output but correcting repository names and asking Gemini to output it in a README structure. 
+The actual first implementation is based on this output, but correcting repository names and asking Gemini to output it in a README structure, which surprisingly resulted in shorter code.
+
+
+
+
+
+
+---
+
+## Implementation--Version 0.2.0 (Gemini 3.0 Pro)
+
+
+**Prompt:**
+Add code to use Scopus with institutional API key and WOS with Starter API key.
+
+**Answer:**
+
+This update adds support for **Scopus** (via `pybliometrics` with Institutional Token support) and **Web of Science** (via the Starter API).
+
+### 1. Update Dependencies
+
+Add `pybliometrics` and `requests` to your `pyproject.toml`.
+
+```toml
+dependencies = [
+    # ... existing dependencies ...
+    "pybliometrics>=3.5", # Scopus Wrapper
+    "requests>=2.31",     # For Web of Science API
+]
+
+```
+
+### 2. Update Configuration (`.env`)
+
+Add your new API keys to your environment file.
+
+```ini
+# ... existing keys ...
+SCOPUS_API_KEY=your_scopus_key
+SCOPUS_INST_TOKEN=your_institutional_token_if_needed
+WOS_STARTER_API_KEY=your_wos_starter_key
+
+```
+
+### 3. Create Scopus Adapter
+
+Create `src/adapters/databases/scopus_adapter.py`. This adapter handles the automatic configuration of `pybliometrics` so you don't have to interact with the terminal prompts on the first run.
+
+```python
+import os
+import pybliometrics
+from pybliometrics.scopus import ScopusSearch
+from src.core.models import Record
+from typing import List
+
+class ScopusAdapter:
+    def __init__(self):
+        self.api_key = os.getenv("SCOPUS_API_KEY")
+        self.inst_token = os.getenv("SCOPUS_INST_TOKEN")
+        self._ensure_config()
+
+    def _ensure_config(self):
+        """
+        Check if pybliometrics is configured. If not, create config programmatically
+        to avoid interactive prompts blocking execution.
+        """
+        if not self.api_key:
+            print("⚠️ SCOPUS_API_KEY not found in .env. Scopus search may fail.")
+            return
+
+        # Check if config exists, if not, create it
+        try:
+            # We trigger a lightweight check or create config explicitly
+            if not pybliometrics.scopus.config['Authentication']['APIKey']:
+                raise KeyError("Key missing")
+        except (KeyError, ImportError, AttributeError):
+            print("⚙️ Configuring Scopus for first-time use...")
+            pybliometrics.scopus.utils.create_config(
+                keys=[self.api_key],
+                inst_token=self.inst_token
+            )
+
+    def search(self, query: str, limit: int = 20) -> List[Record]:
+        print(f"🔎 Searching Scopus for: {query}")
+        try:
+            # Scopus API separates boolean operators with AND/OR, similar to standard syntax
+            s = ScopusSearch(query, count=limit, download=True)
+            
+            records = []
+            if s.results:
+                for doc in s.results:
+                    # Note: Scopus Abstract retrieval often requires the Abstract API, 
+                    # but ScopusSearch result objects often contain the description/abstract
+                    # if the subscriber level allows it.
+                    records.append(Record(
+                        id=doc.eid,
+                        title=doc.title,
+                        abstract=doc.description if doc.description else "Abstract not available via Search API",
+                        authors=[doc.author_names] if doc.author_names else [],
+                        year=int(doc.coverDate[:4]) if doc.coverDate else None,
+                        doi=doc.doi
+                    ))
+            return records
+        except Exception as e:
+            print(f"Error querying Scopus: {e}")
+            return []
+
+```
+
+### 4. Create Web of Science Adapter
+
+Create `src/adapters/databases/wos_adapter.py`. This uses the "Starter API" (formerly Lite) which is commonly available.
+
+**Note:** The Starter API often limits access to abstracts. The code below handles this gracefully.
+
+```python
+import os
+import requests
+from src.core.models import Record
+from typing import List
+
+class WosAdapter:
+    def __init__(self):
+        self.api_key = os.getenv("WOS_STARTER_API_KEY")
+        self.base_url = "https://api.clarivate.com/apis/wos-starter/v1/documents"
+
+    def search(self, query: str, limit: int = 20) -> List[Record]:
+        print(f"🔎 Searching Web of Science (Starter) for: {query}")
+        
+        if not self.api_key:
+            print("⚠️ WOS_STARTER_API_KEY not found. Skipping.")
+            return []
+
+        headers = {
+            "X-ApiKey": self.api_key,
+            "Content-Type": "application/json"
+        }
+        
+        # Starter API uses specific field tags (TS=Topic)
+        # We assume the incoming query is a standard boolean string. 
+        # Ideally, we wrap it in parentheses and prepend TS=, or pass it as 'q' param directly.
+        params = {
+            "q": query, 
+            "limit": limit,
+            "page": 1
+        }
+
+        try:
+            response = requests.get(self.base_url, headers=headers, params=params)
+            
+            if response.status_code != 200:
+                print(f"WoS API Error {response.status_code}: {response.text}")
+                return []
+                
+            data = response.json()
+            records = []
+            
+            for doc in data.get('hits', []):
+                # WoS Starter API often does NOT return the full abstract text in the 'hits'
+                # It returns metadata. We map what we can.
+                
+                # Extract year
+                source = doc.get('source', {})
+                pub_year = source.get('publishYear')
+                
+                # Authors
+                authors = [
+                    f"{a.get('displayName', a.get('name', 'Unknown'))}" 
+                    for a in doc.get('names', {}).get('authors', [])
+                ]
+
+                records.append(Record(
+                    id=doc.get('uid', ''),
+                    title=doc.get('title', {}).get('title', ['No Title'])[0],
+                    # Starter API limitation: Abstract is often missing
+                    abstract=None, 
+                    authors=authors,
+                    year=int(pub_year) if pub_year else None,
+                    doi=doc.get('identifiers', {}).get('doi', '')
+                ))
+            
+            return records
+            
+        except Exception as e:
+            print(f"Error querying Web of Science: {e}")
+            return []
+
+```
+
+### 5. Update Main Loop (`main.py`)
+
+Update `main.py` to allow switching between databases.
+
+```python
+# ... imports ...
+from src.adapters.databases.scopus_adapter import ScopusAdapter
+from src.adapters.databases.wos_adapter import WosAdapter
+
+# ... inside main() ...
+
+    # Allow user or config to select database
+    db_choice = config.get('search', {}).get('database', 'openalex').lower()
+    
+    if db_choice == 'scopus':
+        db = ScopusAdapter()
+    elif db_choice == 'wos':
+        db = WosAdapter()
+    else:
+        db = OpenAlexAdapter()
+
+    # ... continue with search loop ...
+
+```
 
 
