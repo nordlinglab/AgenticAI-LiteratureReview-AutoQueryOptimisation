@@ -1,0 +1,13 @@
+name: "Methods to Evaluate Reproducibility"
+description: "Search for frameworks and methods to assess reproducibility from text."
+
+search:
+  initial_query: 'reproducibility AND ("evaluation method" OR "assessment framework" OR "checklist" OR "scoring system")'
+
+criteria:
+  inclusion:
+    - "Proposes a method, tool, checklist, or framework for evaluating reproducibility."
+    - "Describes how to assess reproducibility based on written descriptions (papers/protocols)."
+  exclusion:
+    - "General guidelines on how to write reproducible code (unless they include an evaluation metric)."
+    - "Studies that simply use a method without describing or critiquing it."

@@ -1,0 +1,13 @@
+name: "Reports of Reproduction Attempts"
+description: "Search for empirical studies that attempt to reproduce previous research."
+
+search:
+  initial_query: 'reproducibility AND ("replication study" OR "reproduction attempt" OR "failed to reproduce")'
+
+criteria:
+  inclusion:
+    - "Primary studies reporting an actual attempt to reproduce or replicate an original study."
+    - "Reports of successful or failed replications."
+  exclusion:
+    - "Theoretical discussions about reproducibility without new empirical data."
+    - "Studies using 'replication' in a biological context (e.g., DNA replication)."

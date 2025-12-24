@@ -37,6 +37,7 @@ cd AgenticAI-LiteratureReview-AutoQueryOptimisation
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 ```
+
 # 3. Install dependencies
 ```bash
 pip install -e .
@@ -55,16 +56,23 @@ cp .env.example .env
 ```ini
 GEMINI_API_KEY=your_key_here
 OPENALEX_EMAIL=your_email@university.edu
+SCOPUS_API_KEY=your_scopus_key
+SCOPUS_INST_TOKEN=your_institutional_token_if_needed
+WOS_STARTER_API_KEY=your_wos_starter_key
 
 ```
 
 
 ### Usage
 
-Run the main orchestration loop:
+Run a specific search project by name (corresponding to the file in `config/projects/`):
 
 ```bash
-python main.py
+# Run the "reproduction attempts" search
+python main.py run 01_attempts
+
+# Run the "evaluation methods" search
+python main.py run 02_methods
 
 ```
 
@@ -80,6 +88,31 @@ Go to GitHub and create a git repository, like [nordlinglab/AgenticAI-Literature
 
 ### Directory Layout
 
+The structure separates global settings from specific research questions.
+
+```text
+.
+├── config/
+│   ├── settings.yaml              # Global defaults (LLM models, API settings)
+│   ├── projects/                  # Project definitions
+│   │   ├── 01_attempts.yaml
+│   │   ├── 02_methods.yaml
+│   │   ├── 03_assessments.yaml
+│   │   └── 04_reviews.yaml
+│   ...
+│
+├── src/
+│   ├── adapters/                  # Database & LLM connections
+│   ├── core/                      # Data models & Config loader
+│   ├── orchestration/             # Main logic
+│   ...
+│
+├── main.py                        # CLI Entry point
+├── pyproject.toml
+└── README.md
+
+```
+
 Run these commands to generate the folder structure:
 
 ```bash
@@ -94,14 +127,14 @@ touch src/__init__.py
 
 ```
 
-### Dependency Management (`pyproject.toml`)
+### Dependencies (`pyproject.toml`)
 
 Create this file in the root directory.
 
 ```toml
 [project]
 name = "agentic-ai-lit-review"
-version = "0.1.0"
+version = "0.3.0"
 description = "AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result."
 requires-python = ">=3.11"
 dependencies = [
@@ -111,10 +144,12 @@ dependencies = [
     "litellm>=1.0",      # LLM Abstraction
     "instructor>=1.0",   # Structured Output
     "pyalex>=0.13",      # OpenAlex Wrapper
+    "pybliometrics>=3.5",
+    "requests>=2.31",
     "rich>=13.0",        # Pretty terminal output
+    "typer>=0.9",       # Added for CLI handling
     "python-dotenv>=1.0"
 ]
-
 [tool.setuptools]
 packages = ["src"]
 
@@ -129,306 +164,125 @@ At the end of the standard Python GitHub `.gitignore` add:
 .DS_Store
 logs/
 data/
-.env.keys
 
 ```
+
 
 ---
 
-## 3. Configuration Files (by Gemini 3.0 Pro)
+## 3. Configuration Files  (by Gemini 3.0 Pro)
 
-### Global Settings (`config/settings.yaml`)
+### Project Definitions (`config/projects/*.yaml`)
 
-Defines the search scope and inclusion/exclusion criteria.
+Create these four files in `config/projects/`.
+
+**1. `config/projects/01_attempts.yaml**`
 
 ```yaml
-project:
-  name: "Reproducibility Evaluation Review"
-
-llm:
-  # Using Gemini 1.5 Pro for high-reasoning capability
-  model: "gemini/gemini-1.5-pro-latest" 
-  temperature: 0.1
+name: "Reports of Reproduction Attempts"
+description: "Search for empirical studies that attempt to reproduce previous research."
 
 search:
-  initial_query: 'reproducibility AND ("replication study" OR "meta-research")'
-  max_results_per_iter: 20
-  max_iterations: 3
-  precision_threshold: 0.9
+  initial_query: 'reproducibility AND ("replication study" OR "reproduction attempt" OR "failed to reproduce")'
 
 criteria:
   inclusion:
-    - "Reports of actual attempts to reproduce or replicate original studies."
-    - "Methodologies or frameworks specifically for evaluating reproducibility from written descriptions."
-    - "Assessments or audits of how well reproducibility can be evaluated."
-    - "Systematic reviews or meta-research synthesizing reproducibility evaluations."
+    - "Primary studies reporting an actual attempt to reproduce or replicate an original study."
+    - "Reports of successful or failed replications."
   exclusion:
-    - "Studies that merely mention reproducibility as a keyword without it being the focus."
-    - "Purely computational or software reproducibility (unless discussing general evaluation methods)."
-    - "Statistical protocols without empirical results or synthesis."
+    - "Theoretical discussions about reproducibility without new empirical data."
+    - "Studies using 'replication' in a biological context (e.g., DNA replication)."
 
 ```
+
+**2. `config/projects/02_methods.yaml**`
+
+```yaml
+name: "Methods to Evaluate Reproducibility"
+description: "Search for frameworks and methods to assess reproducibility from text."
+
+search:
+  initial_query: 'reproducibility AND ("evaluation method" OR "assessment framework" OR "checklist" OR "scoring system")'
+
+criteria:
+  inclusion:
+    - "Proposes a method, tool, checklist, or framework for evaluating reproducibility."
+    - "Describes how to assess reproducibility based on written descriptions (papers/protocols)."
+  exclusion:
+    - "General guidelines on how to write reproducible code (unless they include an evaluation metric)."
+    - "Studies that simply use a method without describing or critiquing it."
+
+```
+
+**3. `config/projects/03_assessments.yaml**`
+
+```yaml
+name: "Assessments of Evaluation Methods"
+description: "Search for meta-evaluations or validations of reproducibility metrics."
+
+search:
+  initial_query: 'reproducibility AND ("validity" OR "reliability" OR "meta-evaluation") AND ("metrics" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Evaluates the validity, reliability, or feasibility of existing reproducibility assessment methods."
+    - "Compares different methods for evaluating reproducibility."
+  exclusion:
+    - "Primary reproduction attempts."
+    - "New methods (unless they also evaluate existing ones)."
+
+```
+
+**4. `config/projects/04_reviews.yaml**`
+
+```yaml
+name: "Reviews of Reproducibility Research"
+description: "Search for systematic reviews and meta-research."
+
+search:
+  initial_query: '("systematic review" OR "meta-analysis" OR "meta-research") AND reproducibility AND ("evaluation" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Systematic reviews synthesizing ways to evaluate reproducibility."
+    - "Meta-research articles summarizing attempts to reproduce studies."
+  exclusion:
+    - "Individual primary studies."
+    - "Narrative reviews without a systematic search strategy."
+
+```
+
+### Global Settings (`config/settings.yaml`)
+
+Keeps shared infrastructure settings.
+
+```yaml
+system:
+  # Default LLM (Can be overridden per project if needed)
+  llm_model: "gemini/gemini-1.5-pro-latest"
+  llm_temperature: 0.1
+
+defaults:
+  database: "openalex" # openalex, scopus, wos
+  max_results_per_iter: 20
+  max_iterations: 3
+  precision_threshold: 0.95
+
+```
+
 
 ### Environment Variables (`.env.example`)
 
 ```ini
-GEMINI_API_KEY=
-OPENALEX_EMAIL=
+GEMINI_API_KEY=your_key_here
+OPENALEX_EMAIL=your_email@university.edu
+SCOPUS_API_KEY=your_scopus_key
+SCOPUS_INST_TOKEN=your_institutional_token_if_needed
+WOS_STARTER_API_KEY=your_wos_starter_key
 
 ```
 
----
 
-## 4. Source Code Implementation (by Gemini 3.0 Pro)
-
-### A. Data Models (`src/core/models.py`)
-
-Standardizes how data moves between the database, the LLM, and the user.
-
-```python
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
-
-class Record(BaseModel):
-    """Represents a single academic paper."""
-    id: str
-    title: str
-    abstract: Optional[str] = None
-    authors: List[str] = []
-    year: Optional[int] = None
-    doi: Optional[str] = None
-    
-    def to_text(self):
-        """Formats the record for the LLM prompt."""
-        return f"Title: {self.title}\nAbstract: {self.abstract or 'No Abstract'}\nYear: {self.year}"
-
-class Classification(BaseModel):
-    """Structured output for paper relevance."""
-    relevance: Literal["relevant", "irrelevant", "uncertain"]
-    confidence: float = Field(..., description="Confidence score between 0.0 and 1.0")
-    reasoning: str = Field(..., description="Brief explanation of the decision based on criteria")
-
-class QuerySuggestion(BaseModel):
-    """Structured output for query optimisation."""
-    critique: str = Field(..., description="Analysis of why false positives occurred")
-    new_query: str = Field(..., description="The optimised Boolean query string for OpenAlex")
-    expected_improvement: str = Field(..., description="Why this query is better")
-
-```
-
-### B. OpenAlex Database Adapter (`src/adapters/databases/openalex_adapter.py`)
-
-Handles connection to the OpenAlex API using `pyalex`.
-
-```python
-import pyalex
-from src.core.models import Record
-import os
-
-class OpenAlexAdapter:
-    def __init__(self):
-        # Setting email places us in the 'Polite Pool' for faster/better access
-        email = os.getenv("OPENALEX_EMAIL")
-        if email:
-            pyalex.config.email = email
-
-    def search(self, query: str, limit: int = 20) -> List[Record]:
-        print(f"🔎 Searching OpenAlex for: {query}")
-        try:
-            # OpenAlex boolean search works best with search= parameter for keywords
-            results = pyalex.Works().search(query).get(per_page=limit)
-            
-            records = []
-            for w in results:
-                # Handle missing abstracts (inverted index reconstruction)
-                abstract = w.get("abstract_inverted_index")
-                abstract_text = None
-                if abstract:
-                    try:
-                        words = sorted([(pos, word) for word, positions in abstract.items() for pos in positions])
-                        abstract_text = " ".join(word for _, word in words)
-                    except:
-                        abstract_text = "Error parsing abstract"
-
-                records.append(Record(
-                    id=w.get("id", ""),
-                    title=w.get("display_name", "No Title"),
-                    abstract=abstract_text,
-                    authors=[a['author']['display_name'] for a in w.get('authorships', [])],
-                    year=w.get("publication_year"),
-                    doi=w.get("doi")
-                ))
-            return records
-        except Exception as e:
-            print(f"Error querying OpenAlex: {e}")
-            return []
-
-```
-
-### C. Gemini LLM Adapter (`src/adapters/llms/gemini_adapter.py`)
-
-Uses `instructor` + `litellm` to interface with Gemini.
-
-```python
-import instructor
-import litellm
-import os
-from src.core.models import Record, Classification, QuerySuggestion
-
-class GeminiAdapter:
-    def __init__(self, model_name: str = "gemini/gemini-1.5-pro-latest"):
-        self.model_name = model_name
-        self.client = instructor.from_litellm(litellm.completion)
-        self.api_key = os.getenv("GEMINI_API_KEY")
-
-    def classify(self, record: Record, criteria: dict) -> Classification:
-        prompt = f"""
-        Analyze the following academic paper against the research criteria.
-        
-        PAPER:
-        {record.to_text()}
-        
-        INCLUSION CRITERIA:
-        {criteria['inclusion']}
-        
-        EXCLUSION CRITERIA:
-        {criteria['exclusion']}
-        
-        Task: Classify as 'relevant', 'irrelevant', or 'uncertain'.
-        Provide a confidence score (0.0 to 1.0) and brief reasoning.
-        """
-        
-        return self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            response_model=Classification,
-            api_key=self.api_key
-        )
-
-    def optimize_query(self, current_query: str, false_positives: list[Record]) -> QuerySuggestion:
-        fp_text = "\n".join([f"- {r.title}" for r in false_positives[:5]])
-        
-        prompt = f"""
-        I am conducting a systematic review on reproducibility evaluation.
-        
-        CURRENT QUERY: {current_query}
-        
-        PROBLEM: The query returned these IRRELEVANT papers (False Positives):
-        {fp_text}
-        
-        TASK: 
-        1. Analyze why these papers were caught (e.g., polysemy, wrong context).
-        2. Construct a new, boolean OpenAlex-compatible query string to exclude these types of papers while keeping relevant ones.
-        3. Explain your logic.
-        """
-        
-        return self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            response_model=QuerySuggestion,
-            api_key=self.api_key
-        )
-
-```
-
-### D. Main Orchestration Loop (`main.py`)
-
-Connects the components and handles the user interface.
-
-```python
-import yaml
-import os
-from rich.console import Console
-from rich.prompt import Prompt
-from src.adapters.databases.openalex_adapter import OpenAlexAdapter
-from src.adapters.llms.gemini_adapter import GeminiAdapter
-from src.core.models import Record
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-console = Console()
-
-def load_config():
-    with open("config/settings.yaml", "r") as f:
-        return yaml.safe_load(f)
-
-def human_review(record: Record, llm_reason: str):
-    """Triggered when LLM is uncertain."""
-    console.print(f"\n[yellow]UNCERTAIN RECORD[/yellow]")
-    console.print(f"[bold]{record.title}[/bold]")
-    console.print(f"[italic]{record.abstract[:200]}...[/italic]")
-    console.print(f"LLM Reasoning: {llm_reason}")
-    
-    choice = Prompt.ask("Classify", choices=["relevant", "irrelevant", "skip"])
-    return choice
-
-def main():
-    config = load_config()
-    db = OpenAlexAdapter()
-    llm = GeminiAdapter(model_name=config['llm']['model'])
-    
-    current_query = config['search']['initial_query']
-    max_iters = config['search']['max_iterations']
-    
-    for iteration in range(1, max_iters + 1):
-        console.rule(f"[bold red]Iteration {iteration}[/bold red]")
-        console.print(f"Query: [green]{current_query}[/green]")
-        
-        # 1. Search
-        records = db.search(current_query, limit=config['search']['max_results_per_iter'])
-        if not records:
-            console.print("No records found.")
-            break
-            
-        relevant_count = 0
-        irrelevant_records = []
-        
-        # 2. Classify Loop
-        with console.status("[bold green]Classifying papers with Gemini..."):
-            for record in records:
-                try:
-                    result = llm.classify(record, config['criteria'])
-                    final_decision = result.relevance
-                    
-                    # 3. Human in the Loop for Uncertainty
-                    if result.relevance == "uncertain":
-                        final_decision = human_review(record, result.reasoning)
-                    
-                    if final_decision == "relevant":
-                        relevant_count += 1
-                        console.print(f"[blue]Relevant:[/blue] {record.title[:60]}... (Conf: {result.confidence})")
-                    elif final_decision == "irrelevant":
-                        irrelevant_records.append(record)
-                        
-                except Exception as e:
-                    console.print(f"Error classifying {record.id}: {e}")
-
-        # Summary
-        precision = relevant_count / len(records) if records else 0
-        console.print(f"\nIteration Summary: Precision: {precision:.1%}")
-        
-        if precision >= config['search']['precision_threshold']:
-            console.print("[bold green]Precision goal met! Stopping optimisation.[/bold green]")
-            break
-            
-        # 4. Optimise
-        if irrelevant_records and iteration < max_iters:
-            console.print("\n[bold purple]Optimising Query...[/bold purple]")
-            suggestion = llm.optimize_query(current_query, irrelevant_records)
-            console.print(f"Critique: {suggestion.critique}")
-            console.print(f"New Query: {suggestion.new_query}")
-            
-            # Auto-update query for next loop
-            current_query = suggestion.new_query
-        else:
-            console.print("No false positives to optimise against or max iterations reached.")
-            break
-
-if __name__ == "__main__":
-    main()
-
-```
 
 
 
@@ -1774,7 +1628,7 @@ print(f"\nRationale: {suggestion.rationale}")
 
 ---
 
-## Implementation--Version 0.1.0 (Gemini 3.0 Pro)
+## Implementation--Version 0.0.9 (Gemini 3.0 Pro)
 
 My credits in Claude ended and it is good practice to have multiple LLMs involved in design, so I switched to Gemini 3.0 Pro
 
@@ -2162,7 +2016,445 @@ python main.py
 3. **Human-in-the-Loop:** The script pauses when the LLM is "uncertain" and asks you via the terminal to decide. (Ideally, this moves to the Streamlit UI for larger datasets).
 4. **Reproducibility:** All configuration is in `settings.yaml`, not hardcoded.
 
-The actual first implementation is based on this output, but correcting repository names and asking Gemini to output it in a README structure, which surprisingly resulted in shorter code.
+
+
+
+
+
+
+
+---
+
+## Implementation--Version 0.1.0 (Gemini 3.0 Pro)
+
+
+**Prompt:**
+I prefer to first make the git repository at GitHub with standard Python .gitignore and README.md. I decided to call the project AgenticAI-LiteratureReview-AutoQueryOptimisation and place it in https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation with short description AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result. Now adopt the previous output to this information and output it structured as a README_PROJECT_CREATION.md file containing everything for public display in the project so I can copy paste from a Markdown code window.
+
+**Answer:**
+
+Here is the complete content for your `README_PROJECT_CREATION.md`. This file is designed to be placed in the root of your repository (or kept as a setup guide). It contains the complete architectural blueprint, installation instructions, and source code required to bootstrap the system from scratch.
+
+
+**Repository:** [nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation](https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation)  
+**Description:** AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result.
+
+This project implements a **closed-loop literature search agent**. It performs three key functions iteratively:
+1.  **Search:** Queries academic databases (OpenAlex) for papers.
+2.  **Classify:** Uses an LLM (Gemini via LiteLLM) to read titles/abstracts and classify papers as *Relevant*, *Irrelevant*, or *Uncertain*.
+3.  **Optimise:** Analyses "Irrelevant" results (false positives) to refine the Boolean search string, reducing noise in the next iteration.
+
+---
+
+### 1. Quick Start Guide
+
+#### Prerequisites
+* **Python 3.11+**
+* **Gemini API Key** (from Google AI Studio)
+* **Git**
+
+#### Installation
+
+```bash
+# 1. Clone the repository
+git clone [https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation.git](https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation.git)
+cd AgenticAI-LiteratureReview-AutoQueryOptimisation
+
+# 2. Create virtual environment (using standard venv)
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -e .
+
+```
+
+#### Configuration
+
+1. Copy the example environment file:
+```bash
+cp .env.example .env
+
+```
+
+
+2. Edit `.env` and add your keys:
+```ini
+GEMINI_API_KEY=your_key_here
+OPENALEX_EMAIL=your_email@university.edu
+
+```
+
+
+
+#### Usage
+
+Run the main orchestration loop:
+
+```bash
+python main.py
+
+```
+
+---
+
+### 2. Project Structure & Setup
+
+To re-create this system from scratch, follow the file structure and code blocks below.
+
+#### Directory Layout
+
+Run these commands to generate the folder structure:
+
+```bash
+mkdir -p config/projects
+mkdir -p src/adapters/databases
+mkdir -p src/adapters/llms
+mkdir -p src/core
+mkdir -p src/orchestration
+touch src/__init__.py
+
+```
+
+#### Dependency Management (`pyproject.toml`)
+
+Create this file in the root directory.
+
+```toml
+[project]
+name = "agentic-ai-lit-review"
+version = "0.1.0"
+description = "AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "litellm>=1.0",      # LLM Abstraction
+    "instructor>=1.0",   # Structured Output
+    "pyalex>=0.13",      # OpenAlex Wrapper
+    "rich>=13.0",        # Pretty terminal output
+    "python-dotenv>=1.0"
+]
+
+[tool.setuptools]
+packages = ["src"]
+
+```
+
+#### Standard Git Ignore (`.gitignore`)
+
+```text
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+logs/
+data/
+
+```
+
+---
+
+### 3. Configuration Files
+
+#### Global Settings (`config/settings.yaml`)
+
+Defines the search scope and inclusion/exclusion criteria.
+
+```yaml
+project:
+  name: "Reproducibility Evaluation Review"
+
+llm:
+  # Using Gemini 1.5 Pro for high-reasoning capability
+  model: "gemini/gemini-1.5-pro-latest" 
+  temperature: 0.1
+
+search:
+  initial_query: 'reproducibility AND ("replication study" OR "meta-research")'
+  max_results_per_iter: 20
+  max_iterations: 3
+  precision_threshold: 0.9
+
+criteria:
+  inclusion:
+    - "Reports of actual attempts to reproduce or replicate original studies."
+    - "Methodologies or frameworks specifically for evaluating reproducibility from written descriptions."
+    - "Assessments or audits of how well reproducibility can be evaluated."
+    - "Systematic reviews or meta-research synthesizing reproducibility evaluations."
+  exclusion:
+    - "Studies that merely mention reproducibility as a keyword without it being the focus."
+    - "Purely computational or software reproducibility (unless discussing general evaluation methods)."
+    - "Statistical protocols without empirical results or synthesis."
+
+```
+
+#### Environment Variables (`.env.example`)
+
+```ini
+GEMINI_API_KEY=
+OPENALEX_EMAIL=
+
+```
+
+---
+
+### 4. Source Code Implementation
+
+#### A. Data Models (`src/core/models.py`)
+
+Standardizes how data moves between the database, the LLM, and the user.
+
+```python
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+
+class Record(BaseModel):
+    """Represents a single academic paper."""
+    id: str
+    title: str
+    abstract: Optional[str] = None
+    authors: List[str] = []
+    year: Optional[int] = None
+    doi: Optional[str] = None
+    
+    def to_text(self):
+        """Formats the record for the LLM prompt."""
+        return f"Title: {self.title}\nAbstract: {self.abstract or 'No Abstract'}\nYear: {self.year}"
+
+class Classification(BaseModel):
+    """Structured output for paper relevance."""
+    relevance: Literal["relevant", "irrelevant", "uncertain"]
+    confidence: float = Field(..., description="Confidence score between 0.0 and 1.0")
+    reasoning: str = Field(..., description="Brief explanation of the decision based on criteria")
+
+class QuerySuggestion(BaseModel):
+    """Structured output for query optimisation."""
+    critique: str = Field(..., description="Analysis of why false positives occurred")
+    new_query: str = Field(..., description="The optimised Boolean query string for OpenAlex")
+    expected_improvement: str = Field(..., description="Why this query is better")
+
+```
+
+#### B. OpenAlex Database Adapter (`src/adapters/databases/openalex_adapter.py`)
+
+Handles connection to the OpenAlex API using `pyalex`.
+
+```python
+import pyalex
+from src.core.models import Record
+import os
+
+class OpenAlexAdapter:
+    def __init__(self):
+        # Setting email places us in the 'Polite Pool' for faster/better access
+        email = os.getenv("OPENALEX_EMAIL")
+        if email:
+            pyalex.config.email = email
+
+    def search(self, query: str, limit: int = 20) -> List[Record]:
+        print(f"🔎 Searching OpenAlex for: {query}")
+        try:
+            # OpenAlex boolean search works best with search= parameter for keywords
+            results = pyalex.Works().search(query).get(per_page=limit)
+            
+            records = []
+            for w in results:
+                # Handle missing abstracts (inverted index reconstruction)
+                abstract = w.get("abstract_inverted_index")
+                abstract_text = None
+                if abstract:
+                    try:
+                        words = sorted([(pos, word) for word, positions in abstract.items() for pos in positions])
+                        abstract_text = " ".join(word for _, word in words)
+                    except:
+                        abstract_text = "Error parsing abstract"
+
+                records.append(Record(
+                    id=w.get("id", ""),
+                    title=w.get("display_name", "No Title"),
+                    abstract=abstract_text,
+                    authors=[a['author']['display_name'] for a in w.get('authorships', [])],
+                    year=w.get("publication_year"),
+                    doi=w.get("doi")
+                ))
+            return records
+        except Exception as e:
+            print(f"Error querying OpenAlex: {e}")
+            return []
+
+```
+
+#### C. Gemini LLM Adapter (`src/adapters/llms/gemini_adapter.py`)
+
+Uses `instructor` + `litellm` to interface with Gemini.
+
+```python
+import instructor
+import litellm
+import os
+from src.core.models import Record, Classification, QuerySuggestion
+
+class GeminiAdapter:
+    def __init__(self, model_name: str = "gemini/gemini-1.5-pro-latest"):
+        self.model_name = model_name
+        self.client = instructor.from_litellm(litellm.completion)
+        self.api_key = os.getenv("GEMINI_API_KEY")
+
+    def classify(self, record: Record, criteria: dict) -> Classification:
+        prompt = f"""
+        Analyze the following academic paper against the research criteria.
+        
+        PAPER:
+        {record.to_text()}
+        
+        INCLUSION CRITERIA:
+        {criteria['inclusion']}
+        
+        EXCLUSION CRITERIA:
+        {criteria['exclusion']}
+        
+        Task: Classify as 'relevant', 'irrelevant', or 'uncertain'.
+        Provide a confidence score (0.0 to 1.0) and brief reasoning.
+        """
+        
+        return self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            response_model=Classification,
+            api_key=self.api_key
+        )
+
+    def optimize_query(self, current_query: str, false_positives: list[Record]) -> QuerySuggestion:
+        fp_text = "\n".join([f"- {r.title}" for r in false_positives[:5]])
+        
+        prompt = f"""
+        I am conducting a systematic review on reproducibility evaluation.
+        
+        CURRENT QUERY: {current_query}
+        
+        PROBLEM: The query returned these IRRELEVANT papers (False Positives):
+        {fp_text}
+        
+        TASK: 
+        1. Analyze why these papers were caught (e.g., polysemy, wrong context).
+        2. Construct a new, boolean OpenAlex-compatible query string to exclude these types of papers while keeping relevant ones.
+        3. Explain your logic.
+        """
+        
+        return self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            response_model=QuerySuggestion,
+            api_key=self.api_key
+        )
+
+```
+
+#### D. Main Orchestration Loop (`main.py`)
+
+Connects the components and handles the user interface.
+
+```python
+import yaml
+import os
+from rich.console import Console
+from rich.prompt import Prompt
+from src.adapters.databases.openalex_adapter import OpenAlexAdapter
+from src.adapters.llms.gemini_adapter import GeminiAdapter
+from src.core.models import Record
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+console = Console()
+
+def load_config():
+    with open("config/settings.yaml", "r") as f:
+        return yaml.safe_load(f)
+
+def human_review(record: Record, llm_reason: str):
+    """Triggered when LLM is uncertain."""
+    console.print(f"\n[yellow]UNCERTAIN RECORD[/yellow]")
+    console.print(f"[bold]{record.title}[/bold]")
+    console.print(f"[italic]{record.abstract[:200]}...[/italic]")
+    console.print(f"LLM Reasoning: {llm_reason}")
+    
+    choice = Prompt.ask("Classify", choices=["relevant", "irrelevant", "skip"])
+    return choice
+
+def main():
+    config = load_config()
+    db = OpenAlexAdapter()
+    llm = GeminiAdapter(model_name=config['llm']['model'])
+    
+    current_query = config['search']['initial_query']
+    max_iters = config['search']['max_iterations']
+    
+    for iteration in range(1, max_iters + 1):
+        console.rule(f"[bold red]Iteration {iteration}[/bold red]")
+        console.print(f"Query: [green]{current_query}[/green]")
+        
+        # 1. Search
+        records = db.search(current_query, limit=config['search']['max_results_per_iter'])
+        if not records:
+            console.print("No records found.")
+            break
+            
+        relevant_count = 0
+        irrelevant_records = []
+        
+        # 2. Classify Loop
+        with console.status("[bold green]Classifying papers with Gemini..."):
+            for record in records:
+                try:
+                    result = llm.classify(record, config['criteria'])
+                    final_decision = result.relevance
+                    
+                    # 3. Human in the Loop for Uncertainty
+                    if result.relevance == "uncertain":
+                        final_decision = human_review(record, result.reasoning)
+                    
+                    if final_decision == "relevant":
+                        relevant_count += 1
+                        console.print(f"[blue]Relevant:[/blue] {record.title[:60]}... (Conf: {result.confidence})")
+                    elif final_decision == "irrelevant":
+                        irrelevant_records.append(record)
+                        
+                except Exception as e:
+                    console.print(f"Error classifying {record.id}: {e}")
+
+        # Summary
+        precision = relevant_count / len(records) if records else 0
+        console.print(f"\nIteration Summary: Precision: {precision:.1%}")
+        
+        if precision >= config['search']['precision_threshold']:
+            console.print("[bold green]Precision goal met! Stopping optimisation.[/bold green]")
+            break
+            
+        # 4. Optimise
+        if irrelevant_records and iteration < max_iters:
+            console.print("\n[bold purple]Optimising Query...[/bold purple]")
+            suggestion = llm.optimize_query(current_query, irrelevant_records)
+            console.print(f"Critique: {suggestion.critique}")
+            console.print(f"New Query: {suggestion.new_query}")
+            
+            # Auto-update query for next loop
+            current_query = suggestion.new_query
+        else:
+            console.print("No false positives to optimise against or max iterations reached.")
+            break
+
+if __name__ == "__main__":
+    main()
+
+```
+
+
+
+
 
 
 
@@ -2375,5 +2667,419 @@ from src.adapters.databases.wos_adapter import WosAdapter
     # ... continue with search loop ...
 
 ```
+
+
+
+
+
+
+
+
+
+
+---
+
+## Implementation--Version 0.3.0 (Gemini 3.0 Pro)
+
+
+**Prompt:**
+Update the code so that I can have a different project definition for each search. I now need to do four separate searches and want separate project for each. The structure should be prepared for adding more search projects. 
+Now we search for following four:
+    \begin{enumerate}
+  \item \textbf{reports of attempts to reproduce} original studies,
+  \item \textbf{ways to evaluate reproducibility} of research from written descriptions
+  \item \textbf{assessments of ways} to evaluate reproducibility of research from written descriptions, and 
+  \item \textbf{review and meta-research articles} that synthesise ways to evaluate reproducibility or attempts to reproduce studies. 
+    \end{enumerate}
+
+
+
+**Answer:**
+To support multiple search projects, we need to refactor the configuration system. Instead of a single `settings.yaml` controlling everything, we will use a **Base Configuration** (for API keys and defaults) and **Project-Specific Configurations** (for queries and criteria).
+
+I will also introduce `typer` to the `main.py` script so you can easily switch projects via the command line (e.g., `python main.py run project_name`).
+
+Here is the updated `README_PROJECT_CREATION.md` with the multi-project architecture.
+
+**Repository:** [nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation](https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation)  
+**Description:** AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result. Supports multi-project management for distinct literature review distinct search goals.
+
+---
+
+### 1. Quick Start Guide
+
+### Prerequisites
+* **Python 3.11+**
+* **Gemini API Key** (Google AI Studio)
+* **Git**
+
+#### Installation
+
+```bash
+# 1. Clone the repository
+git clone [https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation.git](https://github.com/nordlinglab/AgenticAI-LiteratureReview-AutoQueryOptimisation.git)
+cd AgenticAI-LiteratureReview-AutoQueryOptimisation
+
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -e .
+
+```
+
+#### Configuration
+
+1. **Environment Variables:**
+```bash
+cp .env.example .env
+# Edit .env with your keys:
+# GEMINI_API_KEY=...
+# OPENALEX_EMAIL=...
+# SCOPUS_API_KEY=... (Optional)
+# WOS_STARTER_API_KEY=... (Optional)
+
+```
+
+
+
+#### Usage
+
+Run a specific search project by name (corresponding to the file in `config/projects/`):
+
+```bash
+# Run the "reproduction attempts" search
+python main.py run 01_attempts
+
+# Run the "evaluation methods" search
+python main.py run 02_methods
+
+```
+
+---
+
+### 2. Project Structure
+
+The structure separates global settings from specific research questions.
+
+```text
+.
+├── config/
+│   ├── settings.yaml              # Global defaults (LLM models, API settings)
+│   └── projects/                  # Project definitions
+│       ├── 01_attempts.yaml
+│       ├── 02_methods.yaml
+│       ├── 03_assessments.yaml
+│       └── 04_reviews.yaml
+├── src/
+│   ├── adapters/                  # Database & LLM connections
+│   ├── core/                      # Data models & Config loader
+│   └── orchestration/             # Main logic
+├── main.py                        # CLI Entry point
+├── pyproject.toml
+└── README.md
+
+```
+
+#### Dependencies (`pyproject.toml`)
+
+Ensure `typer` is included for the CLI.
+
+```toml
+[project]
+name = "agentic-ai-lit-review"
+version = "0.2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "litellm>=1.0",
+    "instructor>=1.0",
+    "pyalex>=0.13",
+    "pybliometrics>=3.5",
+    "requests>=2.31",
+    "rich>=13.0",
+    "typer>=0.9",       # Added for CLI handling
+    "python-dotenv>=1.0"
+]
+[tool.setuptools]
+packages = ["src"]
+
+```
+
+---
+
+### 3. Configuration Files
+
+#### Global Settings (`config/settings.yaml`)
+
+Keeps shared infrastructure settings.
+
+```yaml
+system:
+  # Default LLM (Can be overridden per project if needed)
+  llm_model: "gemini/gemini-1.5-pro-latest"
+  llm_temperature: 0.1
+
+defaults:
+  database: "openalex" # openalex, scopus, wos
+  max_results_per_iter: 20
+  max_iterations: 3
+  precision_threshold: 0.95
+
+```
+
+#### Project Definitions (`config/projects/*.yaml`)
+
+Create these four files in `config/projects/`.
+
+**1. `config/projects/01_attempts.yaml**`
+
+```yaml
+name: "Reports of Reproduction Attempts"
+description: "Search for empirical studies that attempt to reproduce previous research."
+
+search:
+  initial_query: 'reproducibility AND ("replication study" OR "reproduction attempt" OR "failed to reproduce")'
+
+criteria:
+  inclusion:
+    - "Primary studies reporting an actual attempt to reproduce or replicate an original study."
+    - "Reports of successful or failed replications."
+  exclusion:
+    - "Theoretical discussions about reproducibility without new empirical data."
+    - "Studies using 'replication' in a biological context (e.g., DNA replication)."
+
+```
+
+**2. `config/projects/02_methods.yaml**`
+
+```yaml
+name: "Methods to Evaluate Reproducibility"
+description: "Search for frameworks and methods to assess reproducibility from text."
+
+search:
+  initial_query: 'reproducibility AND ("evaluation method" OR "assessment framework" OR "checklist" OR "scoring system")'
+
+criteria:
+  inclusion:
+    - "Proposes a method, tool, checklist, or framework for evaluating reproducibility."
+    - "Describes how to assess reproducibility based on written descriptions (papers/protocols)."
+  exclusion:
+    - "General guidelines on how to write reproducible code (unless they include an evaluation metric)."
+    - "Studies that simply use a method without describing or critiquing it."
+
+```
+
+**3. `config/projects/03_assessments.yaml**`
+
+```yaml
+name: "Assessments of Evaluation Methods"
+description: "Search for meta-evaluations or validations of reproducibility metrics."
+
+search:
+  initial_query: 'reproducibility AND ("validity" OR "reliability" OR "meta-evaluation") AND ("metrics" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Evaluates the validity, reliability, or feasibility of existing reproducibility assessment methods."
+    - "Compares different methods for evaluating reproducibility."
+  exclusion:
+    - "Primary reproduction attempts."
+    - "New methods (unless they also evaluate existing ones)."
+
+```
+
+**4. `config/projects/04_reviews.yaml**`
+
+```yaml
+name: "Reviews of Reproducibility Research"
+description: "Search for systematic reviews and meta-research."
+
+search:
+  initial_query: '("systematic review" OR "meta-analysis" OR "meta-research") AND reproducibility AND ("evaluation" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Systematic reviews synthesizing ways to evaluate reproducibility."
+    - "Meta-research articles summarizing attempts to reproduce studies."
+  exclusion:
+    - "Individual primary studies."
+    - "Narrative reviews without a systematic search strategy."
+
+```
+
+---
+
+### 4. Source Code
+
+#### A. Config Loader (`src/core/config.py`)
+
+Logic to merge global settings with project files.
+
+```python
+import yaml
+from pathlib import Path
+from typing import Any, Dict
+
+def load_project_config(project_name: str) -> Dict[str, Any]:
+    # 1. Load Global Settings
+    with open("config/settings.yaml", "r") as f:
+        base_config = yaml.safe_load(f)
+    
+    # 2. Find Project File
+    project_path = Path("config/projects") / f"{project_name}.yaml"
+    if not project_path.exists():
+        # Try adding .yaml if missing
+        project_path = Path("config/projects") / project_name
+        if not project_path.exists():
+            raise FileNotFoundError(f"Project configuration '{project_name}' not found in config/projects/")
+    
+    # 3. Load Project Settings
+    with open(project_path, "r") as f:
+        project_config = yaml.safe_load(f)
+    
+    # 4. Merge: Project settings override defaults
+    # We inject project specific settings into the main config structure
+    final_config = base_config.copy()
+    final_config.update(project_config)
+    
+    # Ensure nested 'search' keys exist
+    if 'search' not in final_config:
+        final_config['search'] = {}
+        
+    # Apply defaults if project didn't specify them
+    for key, value in final_config['defaults'].items():
+        if key not in final_config['search']:
+            final_config['search'][key] = value
+            
+    return final_config
+
+```
+
+#### B. Updated Main Entry Point (`main.py`)
+
+Uses `typer` for CLI commands.
+
+```python
+import typer
+import os
+from dotenv import load_dotenv
+from rich.console import Console
+from rich.prompt import Prompt
+
+# Import Core Components
+from src.core.config import load_project_config
+from src.core.models import Record
+from src.adapters.databases.openalex_adapter import OpenAlexAdapter
+from src.adapters.databases.scopus_adapter import ScopusAdapter
+from src.adapters.databases.wos_adapter import WosAdapter
+from src.adapters.llms.gemini_adapter import GeminiAdapter
+
+# Initialize App
+app = typer.Typer(help="Agentic AI Literature Review CLI")
+console = Console()
+load_dotenv()
+
+def get_db_adapter(db_name: str):
+    if db_name == 'scopus':
+        return ScopusAdapter()
+    elif db_name == 'wos':
+        return WosAdapter()
+    return OpenAlexAdapter()
+
+def human_review(record: Record, llm_reason: str):
+    console.print(f"\n[yellow]UNCERTAIN RECORD[/yellow]")
+    console.print(f"[bold]{record.title}[/bold]")
+    console.print(f"[italic]{record.abstract[:200]}...[/italic]")
+    console.print(f"LLM Reasoning: {llm_reason}")
+    return Prompt.ask("Classify", choices=["relevant", "irrelevant", "skip"])
+
+@app.command()
+def run(project: str = typer.Argument(..., help="Name of the project file (e.g., '01_attempts')")):
+    """
+    Start the search and optimisation loop for a specific project.
+    """
+    try:
+        config = load_project_config(project)
+    except FileNotFoundError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    console.rule(f"[bold blue]Project: {config['name']}[/bold blue]")
+    console.print(f"[dim]{config['description']}[/dim]")
+
+    # Initialize Components
+    db_name = config['search'].get('database', 'openalex')
+    db = get_db_adapter(db_name)
+    
+    llm_model = config.get('system', {}).get('llm_model', 'gemini/gemini-1.5-pro-latest')
+    llm = GeminiAdapter(model_name=llm_model)
+    
+    # Loop State
+    current_query = config['search']['initial_query']
+    max_iters = config['search']['max_iterations']
+    precision_target = config['search']['precision_threshold']
+    
+    for iteration in range(1, max_iters + 1):
+        console.rule(f"[bold red]Iteration {iteration}[/bold red]")
+        console.print(f"Query: [green]{current_query}[/green]")
+        
+        # 1. Search
+        records = db.search(current_query, limit=config['search']['max_results_per_iter'])
+        if not records:
+            console.print("No records found.")
+            break
+            
+        relevant_count = 0
+        irrelevant_records = []
+        
+        # 2. Classify
+        with console.status(f"[bold green]Classifying {len(records)} papers..."):
+            for record in records:
+                try:
+                    result = llm.classify(record, config['criteria'])
+                    decision = result.relevance
+                    
+                    if decision == "uncertain":
+                        decision = human_review(record, result.reasoning)
+                    
+                    if decision == "relevant":
+                        relevant_count += 1
+                        console.print(f"[blue]Relevant:[/blue] {record.title[:60]}...")
+                    elif decision == "irrelevant":
+                        irrelevant_records.append(record)
+                        
+                except Exception as e:
+                    console.print(f"[red]Error:[/red] {e}")
+
+        # 3. Assess & Optimise
+        total = len(records)
+        precision = relevant_count / total if total > 0 else 0
+        console.print(f"\nIteration Precision: {precision:.1%}")
+        
+        if precision >= precision_target:
+            console.print("[bold green]Target precision reached![/bold green]")
+            break
+            
+        if irrelevant_records and iteration < max_iters:
+            console.print("\n[bold purple]Optimising Query...[/bold purple]")
+            suggestion = llm.optimize_query(current_query, irrelevant_records)
+            console.print(f"Critique: {suggestion.critique}")
+            console.print(f"New Query: {suggestion.new_query}")
+            current_query = suggestion.new_query
+        else:
+            break
+
+if __name__ == "__main__":
+    app()
+
+```
+
+#### C. Adapters & Models
+
+*Ensure `src/adapters/databases/*.py`, `src/adapters/llms/*.py` and `src/core/models.py` are created as defined in the previous steps. They remain compatible with this new structure.*
 
 

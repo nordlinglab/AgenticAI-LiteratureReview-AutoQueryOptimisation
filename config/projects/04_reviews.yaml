@@ -1,0 +1,13 @@
+name: "Reviews of Reproducibility Research"
+description: "Search for systematic reviews and meta-research."
+
+search:
+  initial_query: '("systematic review" OR "meta-analysis" OR "meta-research") AND reproducibility AND ("evaluation" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Systematic reviews synthesizing ways to evaluate reproducibility."
+    - "Meta-research articles summarizing attempts to reproduce studies."
+  exclusion:
+    - "Individual primary studies."
+    - "Narrative reviews without a systematic search strategy."

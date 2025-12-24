@@ -1,0 +1,13 @@
+name: "Assessments of Evaluation Methods"
+description: "Search for meta-evaluations or validations of reproducibility metrics."
+
+search:
+  initial_query: 'reproducibility AND ("validity" OR "reliability" OR "meta-evaluation") AND ("metrics" OR "assessment")'
+
+criteria:
+  inclusion:
+    - "Evaluates the validity, reliability, or feasibility of existing reproducibility assessment methods."
+    - "Compares different methods for evaluating reproducibility."
+  exclusion:
+    - "Primary reproduction attempts."
+    - "New methods (unless they also evaluate existing ones)."

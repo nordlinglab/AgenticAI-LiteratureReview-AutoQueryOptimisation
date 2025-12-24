@@ -1,48 +1,61 @@
-import yaml
+import typer
 import os
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.prompt import Prompt
-from src.adapters.databases.openalex_adapter import OpenAlexAdapter
-from src.adapters.llms.gemini_adapter import GeminiAdapter
+
+# Import Core Components
+from src.core.config import load_project_config
 from src.core.models import Record
-from dotenv import load_dotenv
+from src.adapters.databases.openalex_adapter import OpenAlexAdapter
 from src.adapters.databases.scopus_adapter import ScopusAdapter
 from src.adapters.databases.wos_adapter import WosAdapter
+from src.adapters.llms.gemini_adapter import GeminiAdapter
 
-# Load environment variables
-load_dotenv()
+# Initialize App
+app = typer.Typer(help="Agentic AI Literature Review CLI")
 console = Console()
+load_dotenv()
 
-def load_config():
-    with open("config/settings.yaml", "r") as f:
-        return yaml.safe_load(f)
+def get_db_adapter(db_name: str):
+    if db_name == 'scopus':
+        return ScopusAdapter()
+    elif db_name == 'wos':
+        return WosAdapter()
+    return OpenAlexAdapter()
 
 def human_review(record: Record, llm_reason: str):
-    """Triggered when LLM is uncertain."""
     console.print(f"\n[yellow]UNCERTAIN RECORD[/yellow]")
     console.print(f"[bold]{record.title}[/bold]")
     console.print(f"[italic]{record.abstract[:200]}...[/italic]")
     console.print(f"LLM Reasoning: {llm_reason}")
-    
-    choice = Prompt.ask("Classify", choices=["relevant", "irrelevant", "skip"])
-    return choice
+    return Prompt.ask("Classify", choices=["relevant", "irrelevant", "skip"])
 
-def main():
-    config = load_config()
-    # Allow user or config to select database
-    db_choice = config.get('search', {}).get('database', 'openalex').lower()
-    
-    if db_choice == 'scopus':
-        db = ScopusAdapter()
-    elif db_choice == 'wos':
-        db = WosAdapter()
-    else:
-        db = OpenAlexAdapter()
+@app.command()
+def run(project: str = typer.Argument(..., help="Name of the project file (e.g., '01_attempts')")):
+    """
+    Start the search and optimisation loop for a specific project.
+    """
+    try:
+        config = load_project_config(project)
+    except FileNotFoundError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
 
-    llm = GeminiAdapter(model_name=config['llm']['model'])
+    console.rule(f"[bold blue]Project: {config['name']}[/bold blue]")
+    console.print(f"[dim]{config['description']}[/dim]")
+
+    # Initialize Components
+    db_name = config['search'].get('database', 'openalex')
+    db = get_db_adapter(db_name)
     
+    llm_model = config.get('system', {}).get('llm_model', 'gemini/gemini-1.5-pro-latest')
+    llm = GeminiAdapter(model_name=llm_model)
+    
+    # Loop State
     current_query = config['search']['initial_query']
     max_iters = config['search']['max_iterations']
+    precision_target = config['search']['precision_threshold']
     
     for iteration in range(1, max_iters + 1):
         console.rule(f"[bold red]Iteration {iteration}[/bold red]")
@@ -57,46 +70,42 @@ def main():
         relevant_count = 0
         irrelevant_records = []
         
-        # 2. Classify Loop
-        with console.status("[bold green]Classifying papers with Gemini..."):
+        # 2. Classify
+        with console.status(f"[bold green]Classifying {len(records)} papers..."):
             for record in records:
                 try:
                     result = llm.classify(record, config['criteria'])
-                    final_decision = result.relevance
+                    decision = result.relevance
                     
-                    # 3. Human in the Loop for Uncertainty
-                    if result.relevance == "uncertain":
-                        final_decision = human_review(record, result.reasoning)
+                    if decision == "uncertain":
+                        decision = human_review(record, result.reasoning)
                     
-                    if final_decision == "relevant":
+                    if decision == "relevant":
                         relevant_count += 1
-                        console.print(f"[blue]Relevant:[/blue] {record.title[:60]}... (Conf: {result.confidence})")
-                    elif final_decision == "irrelevant":
+                        console.print(f"[blue]Relevant:[/blue] {record.title[:60]}...")
+                    elif decision == "irrelevant":
                         irrelevant_records.append(record)
                         
                 except Exception as e:
-                    console.print(f"Error classifying {record.id}: {e}")
+                    console.print(f"[red]Error:[/red] {e}")
 
-        # Summary
-        precision = relevant_count / len(records) if records else 0
-        console.print(f"\nIteration Summary: Precision: {precision:.1%}")
+        # 3. Assess & Optimise
+        total = len(records)
+        precision = relevant_count / total if total > 0 else 0
+        console.print(f"\nIteration Precision: {precision:.1%}")
         
-        if precision >= config['search']['precision_threshold']:
-            console.print("[bold green]Precision goal met! Stopping optimisation.[/bold green]")
+        if precision >= precision_target:
+            console.print("[bold green]Target precision reached![/bold green]")
             break
             
-        # 4. Optimise
         if irrelevant_records and iteration < max_iters:
             console.print("\n[bold purple]Optimising Query...[/bold purple]")
             suggestion = llm.optimize_query(current_query, irrelevant_records)
             console.print(f"Critique: {suggestion.critique}")
             console.print(f"New Query: {suggestion.new_query}")
-            
-            # Auto-update query for next loop
             current_query = suggestion.new_query
         else:
-            console.print("No false positives to optimise against or max iterations reached.")
             break
 
 if __name__ == "__main__":
-    main()
+    app()
