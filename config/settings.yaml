@@ -1,0 +1,24 @@
+project:
+  name: "Reproducibility Evaluation Review"
+
+llm:
+  # Using Gemini 1.5 Pro for high-reasoning capability
+  model: "gemini/gemini-1.5-pro-latest" 
+  temperature: 0.1
+
+search:
+  initial_query: 'reproducibility AND ("replication study" OR "meta-research")'
+  max_results_per_iter: 20
+  max_iterations: 3
+  precision_threshold: 0.9
+
+criteria:
+  inclusion:
+    - "Reports of actual attempts to reproduce or replicate original studies."
+    - "Methodologies or frameworks specifically for evaluating reproducibility from written descriptions."
+    - "Assessments or audits of how well reproducibility can be evaluated."
+    - "Systematic reviews or meta-research synthesizing reproducibility evaluations."
+  exclusion:
+    - "Studies that merely mention reproducibility as a keyword without it being the focus."
+    - "Purely computational or software reproducibility (unless discussing general evaluation methods)."
+    - "Statistical protocols without empirical results or synthesis."

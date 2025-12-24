@@ -1,0 +1,18 @@
+[project]
+name = "agentic-ai-lit-review"
+version = "0.1.0"
+description = "AgenticAI for systematic literature search using an LLM to optimise the search query and analyse the search result."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "litellm>=1.0",      # LLM Abstraction
+    "instructor>=1.0",   # Structured Output
+    "pyalex>=0.13",      # OpenAlex Wrapper
+    "rich>=13.0",        # Pretty terminal output
+    "python-dotenv>=1.0"
+]
+
+[tool.setuptools]
+packages = ["src"]
